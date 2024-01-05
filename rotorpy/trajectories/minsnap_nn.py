@@ -1,11 +1,10 @@
 """
-Imports
+Use the min snap trajectory generation algorithm to generate a trajectory for the quadrotor w/o using neural networks.
 """
 import numpy as np
 import cvxopt
 from scipy.linalg import block_diag
-import itertools
-from learning.trajgen import nonlinear_jax, nonlinear, sgd_jax
+from learning.trajgen import sgd_jax
 
 
 def cvxopt_solve_qp(P, q, G=None, h=None, A=None, b=None):
@@ -377,23 +376,13 @@ class MinSnap(object):
                 # get b by concatenating bx, by, bz, byaw
                 b = np.concatenate((bx, by, bz, byaw))
 
-                
-
-                
                 ### minsnap ######## jax  ####
                 nn_coeff, pred, nan_encountered = sgd_jax.modify_reference(
-                    regularizer,
-                    H,
-                    A,
-                    b,
-                    min_snap_coeffs
+                    regularizer, H, A, b, min_snap_coeffs
                 )
 
                 self.nan_encountered = nan_encountered  # Update the value
-                ### minsnap ######## jax  ####
 
-                ### minsnap ######## torch  ####
-                # nn_coeff, pred = nonlinear.modify_reference(
                 if nan_encountered == False:
                     c_opt_x = nn_coeff[0 : ((poly_degree + 1) * m)]
                     c_opt_y = nn_coeff[
