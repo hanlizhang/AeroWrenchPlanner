@@ -1,7 +1,8 @@
 #! /usr/bin/env python3
 
 """
-run inference on the trained model
+Generate training data
+simple replanning with lissajous trajectory with fixed waypoints
 """
 
 import sys
@@ -9,25 +10,16 @@ import os
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # Import the 3D projection
-
-# import rospy
 import numpy as np
 
 import sys
 
 import ruamel.yaml as yaml
 from flax.training import train_state
-import flax
 import optax
 import jax
 from mlp_jax import MLP
 from model_learning import restore_checkpoint
-from jaxopt import ProjectedGradient
-from jaxopt.projection import projection_affine_set
-import jax.numpy as jnp
-
-
 from scipy.spatial.transform import Rotation as R
 import time
 from rotorpy.utils.occupancy_map import OccupancyMap
@@ -37,9 +29,6 @@ from rotorpy.trajectories.minsnap_nn import MinSnap
 from rotorpy.vehicles.crazyflie_params import quad_params
 from rotorpy.environments import Environment
 from rotorpy.world import World
-import pandas as pd
-
-from scipy.spatial.transform import Rotation as R
 
 gamma = 1
 
@@ -252,31 +241,6 @@ def sample_yaw(seed, waypoints, yaw_min=-np.pi, yaw_max=np.pi):
     return yaw_angles
 
 
-def compute_yaw_from_quaternion(quaternions):
-    R_matrices = R.from_quat(quaternions).as_matrix()
-    b3 = R_matrices[:, :, 2]
-    H = np.zeros((len(quaternions), 3, 3))
-    for i in range(len(quaternions)):
-        H[i, :, :] = np.array(
-            [
-                [
-                    1 - (b3[i, 0] ** 2) / (1 + b3[i, 2]),
-                    -(b3[i, 0] * b3[i, 1]) / (1 + b3[i, 2]),
-                    b3[i, 0],
-                ],
-                [
-                    -(b3[i, 0] * b3[i, 1]) / (1 + b3[i, 2]),
-                    1 - (b3[i, 1] ** 2) / (1 + b3[i, 2]),
-                    b3[i, 1],
-                ],
-                [-b3[i, 0], -b3[i, 1], b3[i, 2]],
-            ]
-        )
-    Hyaw = np.transpose(H, axes=(0, 2, 1)) @ R_matrices
-    actual_yaw = np.arctan2(Hyaw[:, 1, 0], Hyaw[:, 0, 0])
-    return actual_yaw
-
-
 def compute_cost(sim_result, robust_c=1.0):
     """
     Computes the cost from the output of a simulator instance.
@@ -288,82 +252,12 @@ def compute_cost(sim_result, robust_c=1.0):
 
     # Some useful values from the trajectory.
     actual_pos = sim_result["state"]["x"]  # Position
-    actual_vel = sim_result["state"]["v"]  # Velocity
-    actual_q = sim_result["state"]["q"]  # Attitude
-    actual_yaw = compute_yaw_from_quaternion(actual_q)  # Yaw angle
-
     des_pos = sim_result["flat"]["x"]  # Desired position
-    des_vel = sim_result["flat"]["x_dot"]  # Desired velocity
-    q_des = sim_result["control"]["cmd_q"]  # Desired attitude
-    desired_yaw = compute_yaw_from_quaternion(q_des)
-
-    cmd_thrust = sim_result["control"]["cmd_thrust"]  # Desired thrust
-    cmd_moment = sim_result["control"]["cmd_moment"]  # Desired body moment
 
     # Cost components by cumulative sum of squared norms
     position_error = np.linalg.norm(actual_pos - des_pos, axis=1) ** 2
-    velocity_error = np.linalg.norm(actual_vel - des_vel, axis=1) ** 2
-    yaw_error = (actual_yaw - desired_yaw) ** 2
-    # print(f"yaw_error: {yaw_error}")
-    tracking_cost = position_error + velocity_error + yaw_error
 
-    # control effort
-    thrust_error = cmd_thrust**2
-    moment_error = np.linalg.norm(cmd_moment, axis=1) ** 2
-    control_cost = thrust_error + moment_error
-
-    sim_cost = np.sum(tracking_cost + robust_c * control_cost)
-
-    # return sim_cost
     return np.sum(position_error)
-
-
-def compute_cost_mean(sim_result):
-    """
-    Computes the cost from the output of a simulator instance.
-    Inputs:
-        sim_result: The output of a simulator instance.
-    Outputs:
-        cost: The cost of the trajectory.
-    """
-
-    # Some useful values from the trajectory.
-
-    time = sim_result["time"]
-    x = sim_result["state"]["x"]  # Position
-    v = sim_result["state"]["v"]  # Velocity
-    q = sim_result["state"]["q"]  # Attitude
-    w = sim_result["state"]["w"]  # Body rates
-    rotor_speeds = sim_result["state"]["rotor_speeds"]  # Rotor speeds
-
-    x_des = sim_result["flat"]["x"]  # Desired position
-    v_des = sim_result["flat"]["x_dot"]  # Desired velocity
-    q_des = sim_result["control"]["cmd_q"]  # Desired attitude
-    rotor_speeds_des = sim_result["control"]["cmd_motor_speeds"]  # Desired rotor speeds
-    cmd_thrust = sim_result["control"]["cmd_thrust"]  # Desired thrust
-    cmd_moment = sim_result["control"]["cmd_moment"]  # Desired body moment
-
-    # Cost components
-    position_error = np.linalg.norm(x - x_des, axis=1).mean()
-    velocity_error = np.linalg.norm(v - v_des, axis=1).mean()
-
-    # Calculate attitude error (assuming quaternion representation)
-    # attitude_error = np.linalg.norm(q - q_des, axis=1).mean()  # Modify this based on your attitude representation
-    # Attitude error (for quaternions)
-    # attitude_error = quaternion_distance(q, q_des).mean()
-
-    # Input cost from thrust and body moment
-    # Compute total cost as a weighted sum of tracking errors
-    rho_position, rho_velocity, rho_attitude, rho_thrust, rho_moment = (
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-    )  # Adjust these weights as needed
-    sim_cost = rho_position * position_error + rho_velocity * velocity_error
-
-    return sim_cost
 
 
 # Function to run simulation and compute cost
@@ -375,7 +269,6 @@ def run_simulation_and_compute_cost(
     regularizer=None,
     vehicle=None,
     controller=None,
-    robust_c=1.0,
 ):
     traj = MinSnap(
         points=waypoints,
@@ -413,37 +306,40 @@ def run_simulation_and_compute_cost(
     sim_result = sim_instance.run(
         t_final=traj.t_keyframes[-1], use_mocap=False, terminate=False, plot=False
     )
-    trajectory_cost = compute_cost(sim_result, robust_c=robust_c)
+    trajectory_cost = compute_cost(sim_result)
 
     return sim_result, trajectory_cost, waypoint_times, nan_encountered
 
 
-def plot_results(
-    sim_result_init,
-    sim_result_nn,
-    waypoints,
-    initial_cost,
-    predicted_cost,
-    filename=None,
-    waypoints_time=None,
+def plot_results_for_drag_compensation(
+    sim_result_init, waypoints, initial_cost, filename=None, waypoints_time=None
 ):
-    #     # Compute yaw angles from quaternions
-    # def compute_yaw_from_quaternion(quaternions):
-    #     R_matrices = R.from_quat(quaternions).as_matrix()
-    #     b3 = R_matrices[:, :, 2]
-    #     H = np.zeros((len(quaternions), 3, 3))
-    #     for i in range(len(quaternions)):
-    #         H[i, :, :] = np.array([
-    #             [1 - (b3[i, 0] ** 2) / (1 + b3[i, 2]), -(b3[i, 0] * b3[i, 1]) / (1 + b3[i, 2]), b3[i, 0]],
-    #             [-(b3[i, 0] * b3[i, 1]) / (1 + b3[i, 2]), 1 - (b3[i, 1] ** 2) / (1 + b3[i, 2]), b3[i, 1]],
-    #             [-b3[i, 0], -b3[i, 1], b3[i, 2]],
-    #         ])
-    #     Hyaw = np.transpose(H, axes=(0, 2, 1)) @ R_matrices
-    #     actual_yaw = np.arctan2(Hyaw[:, 1, 0], Hyaw[:, 0, 0])
-    #     return actual_yaw
+    # Compute yaw angles from quaternions
+    def compute_yaw_from_quaternion(quaternions):
+        R_matrices = R.from_quat(quaternions).as_matrix()
+        b3 = R_matrices[:, :, 2]
+        H = np.zeros((len(quaternions), 3, 3))
+        for i in range(len(quaternions)):
+            H[i, :, :] = np.array(
+                [
+                    [
+                        1 - (b3[i, 0] ** 2) / (1 + b3[i, 2]),
+                        -(b3[i, 0] * b3[i, 1]) / (1 + b3[i, 2]),
+                        b3[i, 0],
+                    ],
+                    [
+                        -(b3[i, 0] * b3[i, 1]) / (1 + b3[i, 2]),
+                        1 - (b3[i, 1] ** 2) / (1 + b3[i, 2]),
+                        b3[i, 1],
+                    ],
+                    [-b3[i, 0], -b3[i, 1], b3[i, 2]],
+                ]
+            )
+        Hyaw = np.transpose(H, axes=(0, 2, 1)) @ R_matrices
+        actual_yaw = np.arctan2(Hyaw[:, 1, 0], Hyaw[:, 0, 0])
+        return actual_yaw
 
     actual_yaw_init = compute_yaw_from_quaternion(sim_result_init["state"]["q"])
-    actual_yaw_nn = compute_yaw_from_quaternion(sim_result_nn["state"]["q"])
 
     # Create the figure
     fig = plt.figure(figsize=(18, 8))
@@ -462,35 +358,18 @@ def plot_results(
         sim_result_init["flat"]["x"][:, 2],
         "r-.",
     )
-    ax_traj.plot3D(
-        sim_result_nn["state"]["x"][:, 0],
-        sim_result_nn["state"]["x"][:, 1],
-        sim_result_nn["state"]["x"][:, 2],
-        "g:",
-    )
-    ax_traj.plot3D(
-        sim_result_nn["flat"]["x"][:, 0],
-        sim_result_nn["flat"]["x"][:, 1],
-        sim_result_nn["flat"]["x"][:, 2],
-        "m",
-    )
     ax_traj.scatter(
         waypoints[:, 0], waypoints[:, 1], waypoints[:, 2], c="k", marker="o"
     )
-    ax_traj.set_title("3D Trajectories with Waypoints", fontsize=18)
+    ax_traj.set_title("3D Trajectory with Drag Compensation", fontsize=18)
     ax_traj.set_xlabel("X", fontsize=16)
     ax_traj.set_ylabel("Y", fontsize=16)
     ax_traj.set_zlabel("Z", fontsize=16)
-    ax_traj.legend(
-        ["Initial Actual", "Initial Ref", "NN Actual", "NN Ref", "Waypoints"],
-        fontsize=14,
-    )
-    cost_text = (
-        f"Initial Cost: {initial_cost:.2f}\nSimulated Cost: {predicted_cost:.2f}"
-    )
-    ax_traj.text2D(0.04, 0.02, cost_text, transform=ax_traj.transAxes, fontsize=18)
-    # cost_text = f"Initial Cost: {initial_cost:.2f}\nSimulated Cost: {predicted_cost:.2f}"
-    # ax_traj.text2D(0.05, 0.95, cost_text, transform=ax_traj.transAxes, fontsize=16)
+    ax_traj.legend(["Actual", "Reference", "Waypoints"], fontsize=14)
+
+    # Display initial cost
+    cost_text = f"Initial Cost with Drag Compensation: {initial_cost:.2f}"
+    ax_traj.text2D(0.03, 0.01, cost_text, transform=ax_traj.transAxes, fontsize=16)
 
     # Subplots for X, Y, Z, Yaw
     gs = fig.add_gridspec(4, 2)
@@ -502,32 +381,23 @@ def plot_results(
     # Subplot for X
     ax_x.plot(sim_result_init["time"], sim_result_init["state"]["x"][:, 0], "b--")
     ax_x.plot(sim_result_init["time"], sim_result_init["flat"]["x"][:, 0], "r-.")
-    ax_x.plot(sim_result_nn["time"], sim_result_nn["state"]["x"][:, 0], "g:")
-    ax_x.plot(sim_result_nn["time"], sim_result_nn["flat"]["x"][:, 0], "m")
     ax_x.set_title("X Position Over Time", fontsize=18)
     ax_x.set_xlabel("Time", fontsize=16)
     ax_x.set_ylabel("X Position", fontsize=16)
-    # ax_x.legend(['Initial Actual', 'Initial Ref', 'NN Actual', 'NN Ref'], fontsize=12)
 
     # Subplot for Y
     ax_y.plot(sim_result_init["time"], sim_result_init["state"]["x"][:, 1], "b--")
     ax_y.plot(sim_result_init["time"], sim_result_init["flat"]["x"][:, 1], "r-.")
-    ax_y.plot(sim_result_nn["time"], sim_result_nn["state"]["x"][:, 1], "g:")
-    ax_y.plot(sim_result_nn["time"], sim_result_nn["flat"]["x"][:, 1], "m")
     ax_y.set_title("Y Position Over Time", fontsize=18)
     ax_y.set_xlabel("Time", fontsize=16)
     ax_y.set_ylabel("Y Position", fontsize=16)
-    # ax_y.legend(['Initial Actual', 'Initial Ref', 'NN Actual', 'NN Ref'], fontsize=12)
 
     # Subplot for Z
     ax_z.plot(sim_result_init["time"], sim_result_init["state"]["x"][:, 2], "b--")
     ax_z.plot(sim_result_init["time"], sim_result_init["flat"]["x"][:, 2], "r-.")
-    ax_z.plot(sim_result_nn["time"], sim_result_nn["state"]["x"][:, 2], "g:")
-    ax_z.plot(sim_result_nn["time"], sim_result_nn["flat"]["x"][:, 2], "m")
     ax_z.set_title("Z Position Over Time", fontsize=18)
     ax_z.set_xlabel("Time", fontsize=16)
     ax_z.set_ylabel("Z Position", fontsize=16)
-    # ax_z.legend(['Initial Actual', 'Initial Ref', 'NN Actual', 'NN Ref'], fontsize=12)
 
     # Adding keyframes to the subplots
     for ax, dim in zip([ax_x, ax_y, ax_z], [0, 1, 2]):
@@ -538,12 +408,9 @@ def plot_results(
     # Subplot for Yaw
     ax_yaw.plot(sim_result_init["time"], actual_yaw_init, "b--")
     ax_yaw.plot(sim_result_init["time"], sim_result_init["flat"]["yaw"], "r-.")
-    ax_yaw.plot(sim_result_nn["time"], actual_yaw_nn, "g:")
-    ax_yaw.plot(sim_result_nn["time"], sim_result_nn["flat"]["yaw"], "m")
     ax_yaw.set_title("Yaw Angle Over Time", fontsize=18)
     ax_yaw.set_xlabel("Time", fontsize=16)
     ax_yaw.set_ylabel("Yaw Angle", fontsize=16)
-    # ax_yaw.legend(['Initial Actual', 'Initial Ref', 'NN Actual', 'NN Ref'], fontsize=12)
     ax_yaw.scatter(
         waypoints_time, np.zeros(len(waypoints)), c="k", marker="o", label="Waypoints"
     )
@@ -552,26 +419,19 @@ def plot_results(
     if filename is not None:
         plt.savefig(filename)
 
-    # close the figure
+    # Close the figure
     plt.close(fig)
 
 
 def main():
-    # Define the lists to keep track of times for the simulations
-    times_nn = []
-    times_mj = []
-    times_poly = []
-
     # Initialize neural network
-    rho = 1
+    rho = 0.1
     input_size = 96  # number of coeff
-    # num_data = 72
 
     with open(r"/workspace/rotorpy/learning/params.yaml") as f:
         yaml_data = yaml.load(f, Loader=yaml.RoundTripLoader)
 
     num_hidden = yaml_data["num_hidden"]
-    batch_size = yaml_data["batch_size"]
     learning_rate = yaml_data["learning_rate"]
 
     # Load the trained model
@@ -594,16 +454,12 @@ def main():
     model_save = yaml_data["save_path"] + str(rho)
     print("model_save", model_save)
 
-    # trained_model_state = restore_checkpoint(model_state, model_save, 7)
-
-    # vf = trained_model_state
-    trained_model_state = flax.core.freeze(restore_checkpoint(None, model_save, 7))
-    vf = (model, trained_model_state["params"])
+    trained_model_state = restore_checkpoint(model_state, model_save, 7)
 
     # Define the quadrotor parameters
     world_size = 10
     num_waypoints = 4
-    vavg = 2
+    vavg = 1
     random_yaw = False
     yaw_min = -0.85 * np.pi
     yaw_max = 0.85 * np.pi
@@ -626,15 +482,9 @@ def main():
         ]
     )
     vehicle = Multirotor(quad_params)
-    controller = SE3Control(quad_params)
+    controller_with_drag_compensation = SE3Control(quad_params, drag_compensation=True)
 
-    predicted_cost_diffs = []
-    true_cost_diffs = []
-
-    cost_result = []
-
-    # Loop for seeds=[5, 7, 10, 11, 12, 14, 22, 26, 27, 28, 29, 38, 42, 44, 47, 48, 49, 51, 55, 56, 62, 64, 65, 68, 69, 70, 74, 75, 77, 88, 92, 94, 95, 96, 98]
-    # seeds = [5, 7, 10, 11, 12, 14, 22, 26, 27, 28, 29, 38, 42, 44, 47, 48, 49, 51, 55, 56, 62, 64, 65, 68, 69, 70, 74, 75, 77, 88, 92, 94, 95, 96, 98]
+    # Loop for 100 trajectories
     for i in range(100):
         # Sample waypoints
         waypoints = sample_waypoints(
@@ -657,14 +507,13 @@ def main():
         yaw_angles_zero = np.zeros(len(waypoints))
 
         # /workspace/rotorpy/rotorpy/sim_figures/
-        figure_path = "/workspace/data_output/sim_figures_with_rho" + str(rho)
+        figure_path = "/workspace/data_output/sim_figures_drag_compensation"
 
-        start_time = time.time()
-        total_time = 0
-        # run simulation and compute cost for the initial trajectory
+        #################### drag compensation ####################
+        # run simulation and compute cost for the initial trajectory with drag compensation
         (
-            sim_result_init,
-            trajectory_cost_init,
+            sim_result_init_drag_compensation,
+            trajectory_cost_init_drag_compensation,
             waypoints_time,
             _,
         ) = run_simulation_and_compute_cost(
@@ -674,44 +523,31 @@ def main():
             use_neural_network=False,
             regularizer=None,
             vehicle=vehicle,
-            controller=controller,
-            robust_c=rho,
+            controller=controller_with_drag_compensation,
         )
-        # run simulation and compute cost for the modified trajectory
-        (
-            sim_result_nn,
-            trajectory_cost_nn,
-            _,
-            nan_encountered,
-        ) = run_simulation_and_compute_cost(
+        print(
+            f"Trajectory {i} initial cost with drag compensation: {trajectory_cost_init_drag_compensation}"
+        )
+        plot_results_for_drag_compensation(
+            sim_result_init_drag_compensation,
             waypoints,
-            yaw_angles_zero,
-            vavg,
-            use_neural_network=True,
-            regularizer=vf,
-            vehicle=vehicle,
-            controller=controller,
-            robust_c=rho,
+            trajectory_cost_init_drag_compensation,
+            filename=figure_path + f"/trajectory_{i}_drag_compensation.png",
+            waypoints_time=waypoints_time,
         )
+        #################### drag compensation ####################
+        """
+        # run simulation and compute cost for the initial trajectory
+        sim_result_init, trajectory_cost_init, waypoints_time, _ = run_simulation_and_compute_cost(waypoints, yaw_angles_zero, vavg, use_neural_network=False, regularizer=None, vehicle=vehicle, controller=controller)
+        # run simulation and compute cost for the modified trajectory
+        sim_result_nn, trajectory_cost_nn,_,nan_encountered = run_simulation_and_compute_cost(waypoints, yaw_angles_zero, vavg, use_neural_network=True, regularizer=vf, vehicle=vehicle, controller=controller)
         print("nan_encountered in inference", nan_encountered)
         if nan_encountered == False:
             print(f"Trajectory {i} initial cost: {trajectory_cost_init}")
             print(f"Trajectory {i} neural network modified cost: {trajectory_cost_nn}")
             cost_diff = trajectory_cost_nn - trajectory_cost_init
-            cost_ratio = trajectory_cost_nn / trajectory_cost_init
-            cost_result.append(
-                (trajectory_cost_init, trajectory_cost_nn, cost_diff, cost_ratio)
-            )
-
-            plot_results(
-                sim_result_init,
-                sim_result_nn,
-                waypoints,
-                trajectory_cost_init,
-                trajectory_cost_nn,
-                filename=figure_path + f"/trajectory_{i}.png",
-                waypoints_time=waypoints_time,
-            )
+            cost_differences.append((trajectory_cost_init, trajectory_cost_nn, cost_diff))
+            plot_results(sim_result_init, sim_result_nn, waypoints, trajectory_cost_init, trajectory_cost_nn, filename=figure_path + f"/trajectory_{i}.png", waypoints_time=waypoints_time)
 
         end_time = time.time()
         elapsed_time = end_time - start_time
@@ -719,14 +555,9 @@ def main():
         print(f"Elapsed time for trajectory {i}: {elapsed_time} seconds")
 
     # Save the cost data to a CSV file
-    costs_df = pd.DataFrame(
-        cost_result,
-        columns=["Initial Cost", "NN Modified Cost", "Cost Difference", "Cost Ratio"],
-    )
-    # save to figure path
-    costs_df.to_csv(figure_path + "/mean_cost_data.csv", index=False)
-    # costs_df.to_csv("/workspace/data_output/cost_data.csv", index=False)
-
+    costs_df = pd.DataFrame(cost_differences, columns=['Initial Cost', 'NN Modified Cost', 'Cost Difference'])
+    costs_df.to_csv("/workspace/data_output/cost_data.csv", index=False)
+    """
     # costs_df = pd.read_csv("/workspace/data_output/cost_data.csv")
     # plt.figure()
     # plt.boxplot(costs_df['Cost Difference'], showfliers=False)  # Set showfliers=False to hide outliers
