@@ -1,3 +1,15 @@
+# Ignore Mac OS system files
+.DS_Store
+
+# Ignore specific Python scripts in the trajgen directory
+learning/trajgen/nonlinear_jax.py
+learning/trajgen/quadratic.py
+learning/trajgen/trajutils.py
+learning/trajgen/valuefunc.py
+
+# Ignore specific Python scripts in learning directory
+learning/single_inference_saving_coeff.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
