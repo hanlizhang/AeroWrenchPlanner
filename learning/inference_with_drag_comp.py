@@ -1,8 +1,5 @@
-#! /usr/bin/env python3
-
 """
-Generate training data
-simple replanning with lissajous trajectory with fixed waypoints
+inference with drag compensation in controller
 """
 
 import sys
@@ -21,7 +18,6 @@ import jax
 from mlp_jax import MLP
 from model_learning import restore_checkpoint
 from scipy.spatial.transform import Rotation as R
-import time
 from rotorpy.utils.occupancy_map import OccupancyMap
 from rotorpy.controllers.quadrotor_control import SE3Control
 from rotorpy.vehicles.multirotor import Multirotor
@@ -535,36 +531,6 @@ def main():
             filename=figure_path + f"/trajectory_{i}_drag_compensation.png",
             waypoints_time=waypoints_time,
         )
-        #################### drag compensation ####################
-        """
-        # run simulation and compute cost for the initial trajectory
-        sim_result_init, trajectory_cost_init, waypoints_time, _ = run_simulation_and_compute_cost(waypoints, yaw_angles_zero, vavg, use_neural_network=False, regularizer=None, vehicle=vehicle, controller=controller)
-        # run simulation and compute cost for the modified trajectory
-        sim_result_nn, trajectory_cost_nn,_,nan_encountered = run_simulation_and_compute_cost(waypoints, yaw_angles_zero, vavg, use_neural_network=True, regularizer=vf, vehicle=vehicle, controller=controller)
-        print("nan_encountered in inference", nan_encountered)
-        if nan_encountered == False:
-            print(f"Trajectory {i} initial cost: {trajectory_cost_init}")
-            print(f"Trajectory {i} neural network modified cost: {trajectory_cost_nn}")
-            cost_diff = trajectory_cost_nn - trajectory_cost_init
-            cost_differences.append((trajectory_cost_init, trajectory_cost_nn, cost_diff))
-            plot_results(sim_result_init, sim_result_nn, waypoints, trajectory_cost_init, trajectory_cost_nn, filename=figure_path + f"/trajectory_{i}.png", waypoints_time=waypoints_time)
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        total_time += elapsed_time
-        print(f"Elapsed time for trajectory {i}: {elapsed_time} seconds")
-
-    # Save the cost data to a CSV file
-    costs_df = pd.DataFrame(cost_differences, columns=['Initial Cost', 'NN Modified Cost', 'Cost Difference'])
-    costs_df.to_csv("/workspace/data_output/cost_data.csv", index=False)
-    """
-    # costs_df = pd.read_csv("/workspace/data_output/cost_data.csv")
-    # plt.figure()
-    # plt.boxplot(costs_df['Cost Difference'], showfliers=False)  # Set showfliers=False to hide outliers
-    # plt.title('Predicted Cost - Initial Cost Boxplot')
-    # plt.ylabel('Cost Difference')
-    # plt.savefig(figure_path + "/cost_difference_boxplot_no_outliers.png")
-    # plt.close()
 
 
 if __name__ == "__main__":

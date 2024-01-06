@@ -1,16 +1,9 @@
-from functools import partial
 import numpy as np
 from jaxopt import ProjectedGradient
 from jaxopt.projection import projection_affine_set
 import jax.numpy as jnp
-import jax
-from flax.linen import jit
-from flax.linen import custom_vjp
-# from jax import jit
 
 
-
-# @jit
 def modify_reference(
     regularizer,
     cost_mat_full,
@@ -22,8 +15,7 @@ def modify_reference(
     """
     Running projected gradient descent on the neural network cost + min snap cost with constraints
     """
-    # @jit
-    # @jax.jit
+
     def nn_cost(coeffs):
         """
         Function to compute trajectories given polynomial coefficients
@@ -32,7 +24,9 @@ def modify_reference(
         :param numsteps: Total number of samples in the reference
         :return: ref
         """
-        return coeffs.T @ cost_mat_full @ coeffs + jnp.exp(regularizer[0].apply(regularizer[1], coeffs)[0])
+        return coeffs.T @ cost_mat_full @ coeffs + jnp.exp(
+            regularizer[0].apply(regularizer[1], coeffs)[0]
+        )
 
     # Initialize ProjectedGradient with maxiter set to 1
     pg = ProjectedGradient(
@@ -61,7 +55,9 @@ def modify_reference(
 
     # Iteratively update and check for the best solution
     for _ in range(total_iterations - 1):
-        sol = pg.update(sol.params, sol.state, hyperparams_proj=(A_coeff_full, b_coeff_full))
+        sol = pg.update(
+            sol.params, sol.state, hyperparams_proj=(A_coeff_full, b_coeff_full)
+        )
 
         # Check for NaN errors
         current_error_nan = np.isnan(sol.state.error)
@@ -82,7 +78,7 @@ def modify_reference(
 def main():
     # Test code here
     def regularizer(x):
-        return jnp.sum(x ** 2)
+        return jnp.sum(x**2)
 
     A = 4 * jnp.eye(2)
     b = 2.0 * jnp.ones(2)
@@ -93,5 +89,5 @@ def main():
     print(pred)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

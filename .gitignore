@@ -9,6 +9,7 @@ learning/trajgen/valuefunc.py
 
 # Ignore specific Python scripts in learning directory
 learning/single_inference_saving_coeff.py
+learning/mlp.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

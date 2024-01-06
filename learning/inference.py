@@ -10,21 +10,12 @@ import os
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import matplotlib.pyplot as plt
 import numpy as np
-
 import sys
-
 import ruamel.yaml as yaml
-from flax.training import train_state
 import flax
-import optax
 import jax
 from mlp_jax import MLP
 from model_learning import restore_checkpoint
-from jaxopt import ProjectedGradient
-from jaxopt.projection import projection_affine_set
-import jax.numpy as jnp
-
-
 from scipy.spatial.transform import Rotation as R
 import time
 from rotorpy.utils.occupancy_map import OccupancyMap
@@ -484,12 +475,7 @@ def main():
 
     rng = jax.random.PRNGKey(427)
     rng, inp_rng, init_rng = jax.random.split(rng, 3)
-    inp = jax.random.normal(inp_rng, (1, input_size))  # Batch size 32, input size 2012
     # Initialize the model
-    params = model.init(init_rng, inp)
-
-    optimizer = optax.sgd(learning_rate=learning_rate, momentum=0.9)
-
     model_save = yaml_data["save_path"] + str(rho)
     print("model_save", model_save)
 
