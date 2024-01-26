@@ -6,7 +6,7 @@ This repository supports our research on enhancing quadrotor trajectory generati
 
 ## Paper
 
-TODO: Link to the paper on arXiv
+[arXiv](https://arxiv.org/abs/2401.04960)
 
 ## Environment Setup
 
@@ -43,4 +43,7 @@ TODO: Link to the paper on arXiv
 
 ## Citation
 
+TODO
+
+## video
 TODO
