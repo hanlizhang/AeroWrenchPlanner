@@ -39,6 +39,7 @@ TODO: Link to the paper on arXiv
 
 - Use `tools/plot_traj.py` to plot trajectories for single trial data.
 - Use `tools/final_boxplot.py` for generating boxplots showing the Relative Cost Ratio of your approach compared to Minsnap.
+- Use `tools/inference_once.py` to run inference and visualize the results.
 
 ## Citation
 
