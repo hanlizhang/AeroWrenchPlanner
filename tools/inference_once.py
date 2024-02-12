@@ -15,8 +15,8 @@ import ruamel.yaml as yaml
 import flax
 import optax
 import jax
-from mlp_jax import MLP
-from model_learning import restore_checkpoint
+from learning.mlp_jax import MLP
+from learning.model_learning import restore_checkpoint
 from scipy.spatial.transform import Rotation as R
 import time
 from rotorpy.utils.occupancy_map import OccupancyMap
