@@ -2,6 +2,7 @@ import numpy as np
 from jaxopt import ProjectedGradient
 from jaxopt.projection import projection_affine_set
 import jax.numpy as jnp
+from jax import jit
 
 
 def modify_reference(
@@ -15,7 +16,7 @@ def modify_reference(
     """
     Running projected gradient descent on the neural network cost + min snap cost with constraints
     """
-
+    @jit
     def nn_cost(coeffs):
         """
         Function to compute trajectories given polynomial coefficients
@@ -33,8 +34,8 @@ def modify_reference(
         nn_cost,
         projection=projection_affine_set,
         maxiter=1,
-        # jit = True,
-        verbose=True,
+        jit = True,
+        # verbose=True,
     )
 
     # Run the initial step of ProjectedGradient
@@ -51,7 +52,7 @@ def modify_reference(
         return coeff0, best_error, nan_encountered
 
     # Total iterations, adjust this number as needed
-    total_iterations = 30
+    total_iterations = 100
 
     # Iteratively update and check for the best solution
     for _ in range(total_iterations - 1):

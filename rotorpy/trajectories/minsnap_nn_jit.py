@@ -1,5 +1,5 @@
 """
-Use the min snap trajectory generation algorithm to generate a trajectory for the quadrotor w/o using neural networks.
+Imports
 """
 import numpy as np
 import cvxopt
@@ -259,10 +259,11 @@ class MinSnap(object):
         seg_dist = np.linalg.norm(np.diff(points, axis=0), axis=1)
         seg_mask = np.append(True, seg_dist > 1e-1)
         self.points = points[seg_mask, :]
+        loc_points = self.points
 
         self.null = False
 
-        m = self.points.shape[0] - 1  # Get the number of segments
+        m = loc_points.shape[0] - 1  # Get the number of segments
 
         # Compute the derivatives of the polynomials
         self.x_dot_poly = np.zeros((m, 3, poly_degree))
@@ -273,19 +274,20 @@ class MinSnap(object):
         self.yaw_ddot_poly = np.zeros((m, 1, yaw_poly_degree - 1))
 
         # If two or more waypoints remain, solve min snap
-        if self.points.shape[0] >= 2:
+        if loc_points.shape[0] >= 2:
             ################## Time allocation
             self.delta_t = (
                 seg_dist / self.v_avg
             )  # Compute the segment durations based on the average velocity
+            loc_delta_t = self.delta_t
             self.t_keyframes = np.concatenate(
                 ([0], np.cumsum(self.delta_t))
             )  # Construct time array which indicates when the quad should be at the i'th waypoint.
 
             ################## Cost function
             # First get the cost segment for each matrix:
-            H_pos = [H_fun(self.delta_t[i], k=poly_degree) for i in range(m)]
-            H_yaw = [H_fun(self.delta_t[i], k=yaw_poly_degree) for i in range(m)]
+            H_pos = [H_fun(loc_delta_t[i], k=poly_degree) for i in range(m)]
+            H_yaw = [H_fun(loc_delta_t[i], k=yaw_poly_degree) for i in range(m)]
 
             # Now concatenate these costs using block diagonal form:
             P_pos = block_diag(*H_pos)
@@ -297,8 +299,8 @@ class MinSnap(object):
 
             ################## Constraints for each axis
             (Ax, bx, Gx, hx) = get_1d_constraints(
-                self.points[:, 0],
-                self.delta_t,
+                loc_points[:, 0],
+                loc_delta_t,
                 m,
                 k=poly_degree,
                 vmax=v_max,
@@ -306,8 +308,8 @@ class MinSnap(object):
                 vend=v_end[0],
             )
             (Ay, by, Gy, hy) = get_1d_constraints(
-                self.points[:, 1],
-                self.delta_t,
+                loc_points[:, 1],
+                loc_delta_t,
                 m,
                 k=poly_degree,
                 vmax=v_max,
@@ -315,8 +317,8 @@ class MinSnap(object):
                 vend=v_end[1],
             )
             (Az, bz, Gz, hz) = get_1d_constraints(
-                self.points[:, 2],
-                self.delta_t,
+                loc_points[:, 2],
+                loc_delta_t,
                 m,
                 k=poly_degree,
                 vmax=v_max,
@@ -324,7 +326,7 @@ class MinSnap(object):
                 vend=v_end[2],
             )
             (Ayaw, byaw, Gyaw, hyaw) = get_1d_constraints(
-                self.yaw, self.delta_t, m, k=yaw_poly_degree, vmax=yaw_rate_max
+                self.yaw, loc_delta_t, m, k=yaw_poly_degree, vmax=yaw_rate_max
             )
 
             c_opt_x = cvxopt_solve_qp(P_pos, q=q_pos, G=Gx, h=hx, A=Ax, b=bx)
@@ -376,13 +378,23 @@ class MinSnap(object):
                 # get b by concatenating bx, by, bz, byaw
                 b = np.concatenate((bx, by, bz, byaw))
 
+                
+
+                
                 ### minsnap ######## jax  ####
                 nn_coeff, pred, nan_encountered = sgd_jax.modify_reference(
-                    regularizer, H, A, b, min_snap_coeffs
+                    regularizer,
+                    H,
+                    A,
+                    b,
+                    min_snap_coeffs
                 )
 
                 self.nan_encountered = nan_encountered  # Update the value
+                ### minsnap ######## jax  ####
 
+                ### minsnap ######## torch  ####
+                # nn_coeff, pred = nonlinear.modify_reference(
                 if nan_encountered == False:
                     c_opt_x = nn_coeff[0 : ((poly_degree + 1) * m)]
                     c_opt_y = nn_coeff[

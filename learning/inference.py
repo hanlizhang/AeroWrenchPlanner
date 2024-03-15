@@ -21,7 +21,7 @@ import time
 from rotorpy.utils.occupancy_map import OccupancyMap
 from rotorpy.controllers.quadrotor_control import SE3Control
 from rotorpy.vehicles.multirotor import Multirotor
-from rotorpy.trajectories.minsnap_nn import MinSnap
+from rotorpy.trajectories.minsnap_nn_jit import MinSnap
 from rotorpy.vehicles.crazyflie_params import quad_params
 from rotorpy.environments import Environment
 from rotorpy.world import World
@@ -329,7 +329,8 @@ def run_simulation_and_compute_cost(
 
     waypoint_times = traj.t_keyframes
     sim_result = sim_instance.run(
-        t_final=traj.t_keyframes[-1], use_mocap=False, terminate=False, plot=False
+        t_final=traj.t_keyframes[-1], use_mocap=False, terminate=False, plot=False,
+        animate_bool=True, verbose=True, waypoints=waypoints, fname='test.mp4'
     )
     trajectory_cost = compute_cost(sim_result, robust_c=robust_c)
 
