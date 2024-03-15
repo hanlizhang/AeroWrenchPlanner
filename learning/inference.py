@@ -459,7 +459,7 @@ def plot_results(
 
 def main():
     # Initialize neural network
-    rho = 1
+    rho = 0
     input_size = 96  # number of coeff
 
     with open(r"/workspace/rotorpy/learning/params.yaml") as f:
